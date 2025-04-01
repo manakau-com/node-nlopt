@@ -58,6 +58,8 @@ module.exports = (options)->
 			return _.isArray(arr) and _.reduce(arr, ((acc, val)->acc&&_.isNumber(val)), true)
 		isArrayOfCallbackTolObjects = (arr)->
 			return _.isArray(arr) and _.reduce(arr, ((acc, val)->acc&&_.isObject(val)&&_.isFunction(val.callback)&&_.isNumber(val.tolerance)), true)
+		isArrayOfMultiCallbackTolObjects = (arr)->
+			return _.isArray(arr) and _.reduce(arr, ((acc, val)->acc&&_.isObject(val)&&_.isFunction(val.callback)&&_.isArrayOfDoubles(val.tolerance)), true)
 		#numberOfParameters
 		if !options.numberOfParameters then throw "'numberOfParameters' must be specified"
 		if !_.isNumber(options.numberOfParameters) then throw "'numberOfParameters' must be a number"
@@ -73,8 +75,12 @@ module.exports = (options)->
 		if options.inequalityConstraints and !isArrayOfCallbackTolObjects(options.inequalityConstraints) then throw "'inequalityConstraints' should be an array of {callback:function(){}, tolerance:0} objects"
 		#equalityConstraints
 		if options.equalityConstraints and !isArrayOfCallbackTolObjects(options.equalityConstraints) then throw "'equalityConstraints' should be an array of {callback:function(){}, tolerance:0} objects"
-		#initalGuess
-		if options.initalGuess and !isArrayOfDoubles(options.initalGuess) then throw "'initalGuess' should be an array of doubles"
+		#inequalityMConstraints
+		if options.inequalityMConstraints and !isArrayOfMultiCallbackTolObjects(options.inequalityMConstraints) then throw "'inequalityMConstraints' should be an array of {callback:function(){}, tolerance:number[]} objects"
+		#equalityConstraints
+		if options.equalityMConstraints and !isArrayOfMultiCallbackTolObjects(options.equalityMConstraints) then throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerance::number[]} objects"
+		#initialGuess
+		if options.initialGuess and !isArrayOfDoubles(options.initialGuess) then throw "'initialGuess' should be an array of doubles"
 		#simple parms
 		for parm in ["stopValue", "fToleranceRelative", "fToleranceAbsolute", "xToleranceRelative", "xToleranceAbsolute", "maxEval", "maxTime"]
 			if options[parm] and !_.isNumber(options[parm]) then throw "'#{parm}' must be a double"

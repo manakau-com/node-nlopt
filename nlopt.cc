@@ -141,6 +141,58 @@ double optimizationFunc(unsigned n, const double* x, double* grad, void* ptrCall
   return returnValue;
 }
 
+void optimizationMFunc(unsigned m, double* result, unsigned n, const double* x, double* grad, void* ptrCallback)
+{
+  Isolate* isolate = Isolate::GetCurrent();
+  EscapableHandleScope scope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+
+  Local<Value> undefined;
+  //Local<Function> callback = *reinterpret_cast<Local<Function>*>(ptrCallback);
+  Function* callback = (Function*)(ptrCallback);
+
+  //prepare parms to callback
+  Local<Value> argv[4];
+  argv[0] = Number::New(isolate, m);
+  argv[1] = Number::New(isolate, n);
+  argv[2] = cArrayToV8Array(n, x);
+  //gradient
+  Local<Array> v8Grad;
+  if(grad){
+    v8Grad = cArrayToV8Array(n, grad);
+    argv[3] = v8Grad;
+  }
+  else {
+    argv[3] = Null(isolate);
+  }
+  // Call callback 
+  TryCatch tryCatch(isolate);
+  auto ret = callback->Call(context, context->Global(), 4, argv).ToLocalChecked();
+  //validate return results
+  if(!ret->IsFloat64Array()){
+    isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Objective or constraint function must return an array of number.").ToLocalChecked()));
+  }
+
+  Local<Array> resultArray = Local<Array>::Cast(ret);
+  if(resultArray->Length() != m){
+    isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Length of result array must be the same as the m parameter.").ToLocalChecked()));
+  }
+  else if(grad && v8Grad->Length() != n){
+    isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Length of gradient array must be the same as the number of parameters.").ToLocalChecked()));
+  }
+  else { //success
+    if(grad){
+      for (unsigned i = 0; i < n; ++i) {
+        grad[i] = v8Grad->Get(context, i).ToLocalChecked()->NumberValue(context).ToChecked();
+      }
+    }
+    for (unsigned i = 0; i < m; ++i) {
+      result[i] = resultArray->Get(context, i).ToLocalChecked()->NumberValue(context).ToChecked();
+    }
+  }
+  scope.Escape(undefined);
+}
+
 void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = Isolate::GetCurrent();
   EscapableHandleScope scope(isolate);
@@ -223,16 +275,40 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
     }
   }
 
+  GET_VALUE(Array, inequalityMConstraints, options)
+  if (!val_inequalityMConstraints.IsEmpty()) {
+    for (unsigned i = 0; i < val_inequalityMConstraints->Length(); ++i) {
+      Local<Object> obj = val_inequalityMConstraints->Get(context, i).ToLocalChecked().As<Object>();
+      GET_VALUE(Function, callback, obj)
+      GET_VALUE(Array, tolerances, obj)
+      double* tolerances = v8ArrayToCArray(val_tolerances);
+      code = nlopt_add_inequality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, *val_callback, tolerances);
+      CHECK_CODE(inequalityMConstraints)
+    }
+  }
+
+  GET_VALUE(Array, equalityMConstraints, options)
+  if (!val_equalityMConstraints.IsEmpty()) {
+    for (unsigned i = 0; i < val_equalityMConstraints->Length(); ++i) {
+      Local<Object> obj = val_equalityMConstraints->Get(context, i).ToLocalChecked().As<Object>();
+      GET_VALUE(Function, callback, obj)
+      GET_VALUE(Array, tolerances, obj)
+      double* tolerances = v8ArrayToCArray(val_tolerances);
+      code = nlopt_add_equality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, *val_callback, tolerances);
+      CHECK_CODE(equalityMConstraints)
+    }
+  }
+
   // Setup parameters for optimization
   double* input = new double[n];
   std::fill(input, input + n, 0);
 
   // Initial guess
-  GET_VALUE(Array, initalGuess, options)
-  if (!val_initalGuess.IsEmpty()) {
-    ret->Set(context, key_initalGuess, String::NewFromUtf8(isolate, "Success").ToLocalChecked()).FromJust();
-    for (unsigned i = 0; i < val_initalGuess->Length(); ++i) {
-      input[i] = val_initalGuess->Get(context, i).ToLocalChecked()->NumberValue(context).FromJust();
+  GET_VALUE(Array, initialGuess, options)
+  if (!val_initialGuess.IsEmpty()) {
+    ret->Set(context, key_initialGuess, String::NewFromUtf8(isolate, "Success").ToLocalChecked()).FromJust();
+    for (unsigned i = 0; i < val_initialGuess->Length(); ++i) {
+      input[i] = val_initialGuess->Get(context, i).ToLocalChecked()->NumberValue(context).FromJust();
     }
   }
 
