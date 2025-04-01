@@ -55,8 +55,8 @@
       if (options.equalityConstraints && !isArrayOfCallbackTolObjects(options.equalityConstraints)) {
         throw "'equalityConstraints' should be an array of {callback:function(){}, tolerance:0} objects";
       }
-      if (options.initalGuess && !isArrayOfDoubles(options.initalGuess)) {
-        throw "'initalGuess' should be an array of doubles";
+      if (options.initialGuess && !isArrayOfDoubles(options.initialGuess)) {
+        throw "'initialGuess' should be an array of doubles";
       }
       ref = ["stopValue", "fToleranceRelative", "fToleranceAbsolute", "xToleranceRelative", "xToleranceAbsolute", "maxEval", "maxTime"];
       for (i = 0, len = ref.length; i < len; i++) {
