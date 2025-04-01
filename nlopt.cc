@@ -6,33 +6,38 @@
 
 using namespace v8;
 
+Local<Array> cArrayToV8Array(unsigned n, const double* array) {
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Array> ret = Array::New(isolate, n);
 
-Local<Array> cArrayToV8Array(unsigned n, const double* array)
-{
-  Local<Array> ret = Local<Array>::New(v8::Isolate::GetCurrent(), Array::New(v8::Isolate::GetCurrent(), n));
-  for (unsigned i = 0; i < n; ++i)
-  {
-    ret->Set(i, Number::New(v8::Isolate::GetCurrent(), array[i]));
+  for (unsigned i = 0; i < n; ++i) {
+    ret->Set(context, i, Number::New(isolate, array[i])).FromJust();
   }
+
   return ret;
 }
 
-double* v8ArrayToCArray(Local<Array>& array)
-{
+double* v8ArrayToCArray(Local<Array>& array) {
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = isolate->GetCurrentContext();
   double* ret = new double[array->Length()];
-  for (unsigned i = 0; i < array->Length(); ++i)
-  {
-    ret[i] = array->Get(i)->NumberValue();
+
+  for (unsigned i = 0; i < array->Length(); ++i) {
+    Local<Value> val = array->Get(context, i).ToLocalChecked();
+    ret[i] = val->NumberValue(context).FromJust();
   }
+
   return ret;
 }
 
-void checkNloptErrorCode(Local<Object>& errors, Local<String>& operation, nlopt_result errorCode)
-{
+void checkNloptErrorCode(Local<Object>& errors, Local<String>& operation, nlopt_result errorCode) {
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = isolate->GetCurrentContext();
   const char* str;
-  switch (errorCode)
-  {
-    case NLOPT_SUCCESS: 
+
+  switch (errorCode) {
+    case NLOPT_SUCCESS:
       str = "Success";
       break;
     case NLOPT_STOPVAL_REACHED:
@@ -69,15 +74,15 @@ void checkNloptErrorCode(Local<Object>& errors, Local<String>& operation, nlopt_
       str = "Failure: Unknown Error Code";
       break;
   }
-  //set error message for operation
-  errors->Set(operation, String::NewFromUtf8(v8::Isolate::GetCurrent(), str));
+
+  errors->Set(context, operation, String::NewFromUtf8(isolate, str).ToLocalChecked()).FromJust();
 }
 
 #define GET_VALUE(TYPE, NAME, OBJ) \
-  Local<String> key_##NAME = String::NewFromUtf8(v8::Isolate::GetCurrent(), #NAME); \
+  Local<String> key_##NAME = String::NewFromUtf8(isolate, #NAME).ToLocalChecked(); \
   Local<TYPE> val_##NAME; \
-  if(OBJ->Has(key_##NAME)){ \
-    val_##NAME = Local<TYPE>::Cast(OBJ->Get(key_##NAME)); \
+  if ((OBJ)->Has(context, key_##NAME).FromJust()) { \
+    val_##NAME = Local<TYPE>::Cast((OBJ)->Get(context, key_##NAME).ToLocalChecked()); \
   }
 
 #define CHECK_CODE(NAME) \
@@ -92,14 +97,18 @@ void checkNloptErrorCode(Local<Object>& errors, Local<String>& operation, nlopt_
 
 double optimizationFunc(unsigned n, const double* x, double* grad, void* ptrCallback)
 {
-  EscapableHandleScope scope(v8::Isolate::GetCurrent());
+  Isolate* isolate = Isolate::GetCurrent();
+  EscapableHandleScope scope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+
   Local<Value> undefined;
-  Function* callback = (Function*)ptrCallback;
+  //Local<Function> callback = *reinterpret_cast<Local<Function>*>(ptrCallback);
+  Function* callback = (Function*)(ptrCallback);
   double returnValue = -1;
 
   //prepare parms to callback
   Local<Value> argv[3];
-  argv[0] = Local<Value>::New(v8::Isolate::GetCurrent(), Number::New(v8::Isolate::GetCurrent(), n));
+  argv[0] = Number::New(isolate, n);
   argv[1] = cArrayToV8Array(n, x);
   //gradient
   Local<Array> v8Grad;
@@ -108,66 +117,68 @@ double optimizationFunc(unsigned n, const double* x, double* grad, void* ptrCall
     argv[2] = v8Grad;
   }
   else {
-    argv[2] = Local<Value>::New(v8::Isolate::GetCurrent(), v8::Null(v8::Isolate::GetCurrent()));
+    argv[2] = Null(isolate);
   }
-  //call callback
-  Local<Value> ret = callback->Call(v8::Isolate::GetCurrent()->GetCurrentContext()->Global(), 3, argv);
+  // Call callback 
+  TryCatch tryCatch(isolate);
+  auto ret = callback->Call(context, context->Global(), 3, argv).ToLocalChecked();
   //validate return results
   if(!ret->IsNumber()){
-    v8::Isolate::GetCurrent()->ThrowException(Exception::TypeError(String::NewFromUtf8(v8::Isolate::GetCurrent(), "Objective or constraint function must return a number.")));
+    isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Objective or constraint function must return a number.").ToLocalChecked()));
   }
   else if(grad && v8Grad->Length() != n){
-    v8::Isolate::GetCurrent()->ThrowException(Exception::TypeError(String::NewFromUtf8(v8::Isolate::GetCurrent(), "Length of gradient array must be the same as the number of parameters.")));
+    isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Length of gradient array must be the same as the number of parameters.").ToLocalChecked()));
   }
   else { //success
     if(grad){
       for (unsigned i = 0; i < n; ++i) {
-        grad[i] = v8Grad->Get(i)->NumberValue();
+        grad[i] = v8Grad->Get(context, i).ToLocalChecked()->NumberValue(context).ToChecked();
       }
     }
-    returnValue = ret->NumberValue();
+    returnValue = ret->NumberValue(context).ToChecked();
   }
   scope.Escape(undefined);
   return returnValue;
 }
 
-void Optimize(const FunctionCallbackInfo<Value>& args) {
-  EscapableHandleScope scope(v8::Isolate::GetCurrent());
-  Local<Object> ret = Local<Object>::New(v8::Isolate::GetCurrent(), Object::New(v8::Isolate::GetCurrent()));
+void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  Isolate* isolate = Isolate::GetCurrent();
+  EscapableHandleScope scope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+
+  Local<Object> ret = Object::New(isolate);
   nlopt_result code = NLOPT_SUCCESS;
   Local<String> key;
 
-  //There is not much validation in this function... should be done in js.
-  Local<Object> options = Local<Object>::Cast(args[0]);
+  // There is not much validation in this function... should be done in JS.
+  Local<Object> options = args[0].As<Object>();
 
-  //basic nlopt config
+  // Basic NLOpt config
   GET_VALUE(Number, algorithm, options)
   GET_VALUE(Number, numberOfParameters, options)
-  unsigned n = val_numberOfParameters->Uint32Value();
-  nlopt_opt opt;
-  opt = nlopt_create((nlopt_algorithm)val_algorithm->Uint32Value(), n);
+  unsigned n = val_numberOfParameters->Uint32Value(context).FromJust();
+  nlopt_opt opt = nlopt_create(static_cast<nlopt_algorithm>(val_algorithm->Uint32Value(context).FromJust()), n);
 
-  //objective function
+  // Objective function
   GET_VALUE(Function, minObjectiveFunction, options)
   GET_VALUE(Function, maxObjectiveFunction, options)
-  if(!val_minObjectiveFunction.IsEmpty()){
+  if (!val_minObjectiveFunction.IsEmpty()) {
     code = nlopt_set_min_objective(opt, optimizationFunc, *val_minObjectiveFunction);
     CHECK_CODE(minObjectiveFunction)
-  }
-  else if(!val_maxObjectiveFunction.IsEmpty()){
+  } else if (!val_maxObjectiveFunction.IsEmpty()) {
     code = nlopt_set_max_objective(opt, optimizationFunc, *val_maxObjectiveFunction);
     CHECK_CODE(maxObjectiveFunction)
-  }
-  else{
-    v8::Isolate::GetCurrent()->ThrowException(Exception::TypeError(String::NewFromUtf8(v8::Isolate::GetCurrent(), "minObjectiveFunction or maxObjectiveFunction must be specified")));
-    //return scope.Escape(ret);
+  } else {
+    isolate->ThrowException(Exception::TypeError(
+      String::NewFromUtf8(isolate, "minObjectiveFunction or maxObjectiveFunction must be specified").ToLocalChecked()
+    ));
     args.GetReturnValue().Set(scope.Escape(ret));
     return;
   }
 
-  //optional parms
+  // Optional parameters
   GET_VALUE(Array, lowerBounds, options)
-  if(!val_lowerBounds.IsEmpty()){
+  if (!val_lowerBounds.IsEmpty()) {
     double* lowerBounds = v8ArrayToCArray(val_lowerBounds);
     code = nlopt_set_lower_bounds(opt, lowerBounds);
     CHECK_CODE(lowerBounds)
@@ -175,7 +186,7 @@ void Optimize(const FunctionCallbackInfo<Value>& args) {
   }
 
   GET_VALUE(Array, upperBounds, options)
-  if(!val_upperBounds.IsEmpty()){
+  if (!val_upperBounds.IsEmpty()) {
     double* upperBounds = v8ArrayToCArray(val_upperBounds);
     code = nlopt_set_upper_bounds(opt, upperBounds);
     CHECK_CODE(upperBounds)
@@ -191,59 +202,62 @@ void Optimize(const FunctionCallbackInfo<Value>& args) {
   SIMPLE_CONFIG_OPTION(maxTime, nlopt_set_maxtime)
 
   GET_VALUE(Array, inequalityConstraints, options)
-  if(!val_inequalityConstraints.IsEmpty()){
-    for (unsigned i = 0; i < val_inequalityConstraints->Length(); ++i)
-    {
-      Local<Object> obj = Local<Object>::Cast(val_inequalityConstraints->Get(i));
+  if (!val_inequalityConstraints.IsEmpty()) {
+    for (unsigned i = 0; i < val_inequalityConstraints->Length(); ++i) {
+      Local<Object> obj = val_inequalityConstraints->Get(context, i).ToLocalChecked().As<Object>();
       GET_VALUE(Function, callback, obj)
       GET_VALUE(Number, tolerance, obj)
-      code = nlopt_add_inequality_constraint(opt, optimizationFunc, *val_callback, val_tolerance->NumberValue());
+      code = nlopt_add_inequality_constraint(opt, optimizationFunc, *val_callback, val_tolerance->NumberValue(context).FromJust());
       CHECK_CODE(inequalityConstraints)
     }
   }
 
-  
   GET_VALUE(Array, equalityConstraints, options)
-  if(!val_equalityConstraints.IsEmpty()){
-    for (unsigned i = 0; i < val_equalityConstraints->Length(); ++i)
-    {
-      Local<Object> obj = Local<Object>::Cast(val_equalityConstraints->Get(i));
+  if (!val_equalityConstraints.IsEmpty()) {
+    for (unsigned i = 0; i < val_equalityConstraints->Length(); ++i) {
+      Local<Object> obj = val_equalityConstraints->Get(context, i).ToLocalChecked().As<Object>();
       GET_VALUE(Function, callback, obj)
       GET_VALUE(Number, tolerance, obj)
-      code = nlopt_add_equality_constraint(opt, optimizationFunc, *val_callback, val_tolerance->NumberValue());
+      code = nlopt_add_equality_constraint(opt, optimizationFunc, *val_callback, val_tolerance->NumberValue(context).FromJust());
       CHECK_CODE(equalityConstraints)
     }
   }
 
-  //setup parms for optimization
-  double* input;
-  input = new double[n];
-  for (unsigned i = 0; i < n; ++i) {
-    input[i] = 0;
-  }
-  //initalGuess
+  // Setup parameters for optimization
+  double* input = new double[n];
+  std::fill(input, input + n, 0);
+
+  // Initial guess
   GET_VALUE(Array, initalGuess, options)
-  if(!val_initalGuess.IsEmpty()){
-    ret->Set(key_initalGuess, String::NewFromUtf8(v8::Isolate::GetCurrent(), "Success"));
+  if (!val_initalGuess.IsEmpty()) {
+    ret->Set(context, key_initalGuess, String::NewFromUtf8(isolate, "Success").ToLocalChecked()).FromJust();
     for (unsigned i = 0; i < val_initalGuess->Length(); ++i) {
-      input[i] = val_initalGuess->Get(i)->NumberValue();
+      input[i] = val_initalGuess->Get(context, i).ToLocalChecked()->NumberValue(context).FromJust();
     }
   }
-  //do the optimization!
-  key = String::NewFromUtf8(v8::Isolate::GetCurrent(), "status");
+
+  // Do the optimization!
+  key = String::NewFromUtf8(isolate, "status").ToLocalChecked();
   double output[1] = {0};
   checkNloptErrorCode(ret, key, nlopt_optimize(opt, input, output));
-  ret->Set(String::NewFromUtf8(v8::Isolate::GetCurrent(), "parameterValues"), cArrayToV8Array(n, input));
+  ret->Set(context, String::NewFromUtf8(isolate, "parameterValues").ToLocalChecked(), cArrayToV8Array(n, input)).FromJust();
   delete[] input;
-  ret->Set(String::NewFromUtf8(v8::Isolate::GetCurrent(), "outputValue"), Number::New(v8::Isolate::GetCurrent(), output[0]));
-  nlopt_destroy(opt);//cleanup
+  ret->Set(context, String::NewFromUtf8(isolate, "outputValue").ToLocalChecked(), Number::New(isolate, output[0])).FromJust();
+  nlopt_destroy(opt); // Cleanup
   args.GetReturnValue().Set(scope.Escape(ret));
 }
 
-void init(Handle<Object> exports) {
-  exports->Set(String::NewFromUtf8(v8::Isolate::GetCurrent(), "optimize"),
-      FunctionTemplate::New(v8::Isolate::GetCurrent(), FunctionCallback(Optimize))->GetFunction());
+void init(Local<Object> exports, Local<Value> module, void* priv) {
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  exports->Set(
+    context,
+    String::NewFromUtf8(isolate, "optimize").ToLocalChecked(),
+    FunctionTemplate::New(isolate, Optimize)->GetFunction(context).ToLocalChecked()
+  ).FromJust();
 }
 
+//NODE_MODULE(NODE_GYP_MODULE_NAME, init)
 
 NODE_MODULE(nlopt, init)
