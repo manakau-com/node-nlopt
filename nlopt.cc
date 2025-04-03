@@ -192,6 +192,10 @@ void optimizationMFunc(unsigned m, double* result, unsigned n, const double* x, 
   scope.Escape(undefined);
 }
 
+bool hasValue(const Local<Value>& v) {
+  return !v.IsEmpty() && !v->IsUndefined() && !v->IsNull();
+}
+
 void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = Isolate::GetCurrent();
   EscapableHandleScope scope(isolate);
@@ -213,13 +217,18 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   // Objective function
   GET_VALUE(Function, minObjectiveFunction, options)
   GET_VALUE(Function, maxObjectiveFunction, options)
-  if (!val_minObjectiveFunction.IsEmpty()) {
+  int minMax = 0;
+  if (hasValue(val_minObjectiveFunction)) {
     code = nlopt_set_min_objective(opt, optimizationFunc, *val_minObjectiveFunction);
     CHECK_CODE(minObjectiveFunction)
-  } else if (!val_maxObjectiveFunction.IsEmpty()) {
+    ++minMax;
+  }
+  if (hasValue(val_maxObjectiveFunction)) {
     code = nlopt_set_max_objective(opt, optimizationFunc, *val_maxObjectiveFunction);
     CHECK_CODE(maxObjectiveFunction)
-  } else {
+    ++minMax;
+  }
+  if (minMax != 1) {
     isolate->ThrowException(Exception::TypeError(
       String::NewFromUtf8(isolate, "minObjectiveFunction or maxObjectiveFunction must be specified").ToLocalChecked()
     ));
@@ -229,7 +238,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
 
   // Optional parameters
   GET_VALUE(Array, lowerBounds, options)
-  if (!val_lowerBounds.IsEmpty()) {
+  if (hasValue(val_lowerBounds)) {
     double* lowerBounds = v8ArrayToCArray(val_lowerBounds);
     code = nlopt_set_lower_bounds(opt, lowerBounds);
     CHECK_CODE(lowerBounds)
@@ -237,7 +246,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   GET_VALUE(Array, upperBounds, options)
-  if (!val_upperBounds.IsEmpty()) {
+  if (hasValue(val_upperBounds)) {
     double* upperBounds = v8ArrayToCArray(val_upperBounds);
     code = nlopt_set_upper_bounds(opt, upperBounds);
     CHECK_CODE(upperBounds)
@@ -253,7 +262,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   SIMPLE_CONFIG_OPTION(maxTime, nlopt_set_maxtime)
 
   GET_VALUE(Array, inequalityConstraints, options)
-  if (!val_inequalityConstraints.IsEmpty()) {
+  if (hasValue(val_inequalityConstraints)) {
     for (unsigned i = 0; i < val_inequalityConstraints->Length(); ++i) {
       Local<Object> obj = val_inequalityConstraints->Get(context, i).ToLocalChecked().As<Object>();
       GET_VALUE(Function, callback, obj)
@@ -264,7 +273,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   GET_VALUE(Array, equalityConstraints, options)
-  if (!val_equalityConstraints.IsEmpty()) {
+  if (hasValue(val_equalityConstraints)) {
     for (unsigned i = 0; i < val_equalityConstraints->Length(); ++i) {
       Local<Object> obj = val_equalityConstraints->Get(context, i).ToLocalChecked().As<Object>();
       GET_VALUE(Function, callback, obj)
@@ -275,7 +284,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   GET_VALUE(Array, inequalityMConstraints, options)
-  if (!val_inequalityMConstraints.IsEmpty()) {
+  if (hasValue(val_inequalityMConstraints)) {
     for (unsigned i = 0; i < val_inequalityMConstraints->Length(); ++i) {
       Local<Object> obj = val_inequalityMConstraints->Get(context, i).ToLocalChecked().As<Object>();
       GET_VALUE(Function, callback, obj)
@@ -287,7 +296,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   GET_VALUE(Array, equalityMConstraints, options)
-  if (!val_equalityMConstraints.IsEmpty()) {
+  if (hasValue(val_equalityMConstraints)) {
     for (unsigned i = 0; i < val_equalityMConstraints->Length(); ++i) {
       Local<Object> obj = val_equalityMConstraints->Get(context, i).ToLocalChecked().As<Object>();
       GET_VALUE(Function, callback, obj)
@@ -304,7 +313,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
 
   // Initial guess
   GET_VALUE(Array, initialGuess, options)
-  if (!val_initialGuess.IsEmpty()) {
+  if (hasValue(val_initialGuess)) {
     ret->Set(context, key_initialGuess, String::NewFromUtf8(isolate, "Success").ToLocalChecked()).FromJust();
     for (unsigned i = 0; i < val_initialGuess->Length(); ++i) {
       input[i] = val_initialGuess->Get(context, i).ToLocalChecked()->NumberValue(context).FromJust();

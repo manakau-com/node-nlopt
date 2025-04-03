@@ -23,7 +23,9 @@ options = {
   algorithm: "LD_MMA",
   numberOfParameters:2,
   minObjectiveFunction: myfunc,
+  maxObjectiveFunction: undefined,
   inequalityConstraints:[createMyConstraint([2.0, 0.0]), createMyConstraint([-1.0, 1.0])],
+  equalityConstraints: null,
   xToleranceRelative:1e-4,
   initialGuess:[1.234, 5.678],
   lowerBounds:[Number.MIN_VALUE, 0]
