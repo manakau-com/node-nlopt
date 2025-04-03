@@ -8,7 +8,7 @@
   optimize = require('./build/Release/nlopt').optimize;
 
   module.exports = function(options) {
-    var i, isArrayOfCallbackTolObjects, isArrayOfDoubles, len, parm, ref;
+    var i, isArrayOfCallbackTolObjects, isArrayOfMultiCallbackTolObjects, isArrayOfDoubles, len, parm, ref;
     options = _.cloneDeep(options);
     if (!options.algorithm) {
       throw "'algorithm' must be specified";
@@ -27,6 +27,11 @@
         return _.isArray(arr) && _.reduce(arr, (function(acc, val) {
           return acc && _.isObject(val) && _.isFunction(val.callback) && _.isNumber(val.tolerance);
         }), true);
+      };
+      isArrayOfMultiCallbackTolObjects = function(arr) {
+  			return _.isArray(arr) && _.reduce(arr, (function(acc, val) {
+          return acc && _.isObject(val) && _.isFunction(val.callback) && isArrayOfDoubles(val.tolerances);
+        }), true)
       };
       if (!options.numberOfParameters) {
         throw "'numberOfParameters' must be specified";
@@ -55,8 +60,14 @@
       if (options.equalityConstraints && !isArrayOfCallbackTolObjects(options.equalityConstraints)) {
         throw "'equalityConstraints' should be an array of {callback:function(){}, tolerance:0} objects";
       }
-      if (options.initalGuess && !isArrayOfDoubles(options.initalGuess)) {
-        throw "'initalGuess' should be an array of doubles";
+      if (options.inequalityMConstraints && !isArrayOfMultiCallbackTolObjects(options.inequalityMConstraints)) {
+        throw "'inequalityMConstraints' should be an array of {callback:function(){}, tolerances:number[]} objects";
+      }
+      if (options.equalityMConstraints && !isArrayOfMultiCallbackTolObjects(options.equalityMConstraints)) {
+        throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerances:number[]} objects";
+      }
+      if (options.initialGuess && !isArrayOfDoubles(options.initialGuess)) {
+        throw "'initialGuess' should be an array of doubles";
       }
       ref = ["stopValue", "fToleranceRelative", "fToleranceAbsolute", "xToleranceRelative", "xToleranceAbsolute", "maxEval", "maxTime"];
       for (i = 0, len = ref.length; i < len; i++) {
