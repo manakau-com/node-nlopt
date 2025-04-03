@@ -2,7 +2,6 @@
 #include <v8.h>
 #include <math.h>
 #include <nlopt.h>
-#include <stdio.h>
 
 using namespace v8;
 
