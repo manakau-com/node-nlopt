@@ -1,0 +1,6 @@
+C:/Users/MarcusRainbow/Projects/node-nlopt/nlopt-2.10.0/CMakeFiles/generate-cpp.dir
+C:/Users/MarcusRainbow/Projects/node-nlopt/nlopt-2.10.0/CMakeFiles/nlopt.dir
+C:/Users/MarcusRainbow/Projects/node-nlopt/nlopt-2.10.0/CMakeFiles/PACKAGE.dir
+C:/Users/MarcusRainbow/Projects/node-nlopt/nlopt-2.10.0/CMakeFiles/INSTALL.dir
+C:/Users/MarcusRainbow/Projects/node-nlopt/nlopt-2.10.0/CMakeFiles/ALL_BUILD.dir
+C:/Users/MarcusRainbow/Projects/node-nlopt/nlopt-2.10.0/CMakeFiles/ZERO_CHECK.dir
