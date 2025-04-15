@@ -273,8 +273,7 @@ void NLPSolver::InsertIntervals()
 
     auto insResult = mSearchInformation.insert(pNewInterval);
     bool wasInserted = insResult.second;
-    if(!wasInserted)
-      throw std::runtime_error("Error during interval insertion.");
+    assert(wasInserted);
 
     UpdateAllH(insResult.first);
     UpdateAllH(--insResult.first);

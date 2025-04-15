@@ -26,7 +26,9 @@
 #undef HAVE_BSDGETTIMEOFDAY
 
 /* Define if the copysign function/macro is available. */
+#ifndef HAVE_COPYSIGN
 #define HAVE_COPYSIGN
+#endif
 
 /* Define if the fpclassify() function/macro is available. */
 /* #undef HAVE_FPCLASSIFY */
@@ -118,7 +120,9 @@
 
 /* Define to C thread-local keyword, or to nothing if this is not supported in
    your compiler. */
+#ifndef THREADLOCAL
 #define THREADLOCAL __declspec(thread)
+#endif
 
 /* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
 /* #undef TIME_WITH_SYS_TIME */

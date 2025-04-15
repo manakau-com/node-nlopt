@@ -6,7 +6,6 @@
 
 #include <iostream>
 #include <cstring>
-#include <exception>
 #include <limits>
 
 double ags_eps = 0;
@@ -60,26 +59,19 @@ int ags_minimize(unsigned n, nlopt_func func, void *data, unsigned m, nlopt_cons
   solver.SetProblem(functions, lb, ub);
 
   ags::Trial optPoint;
-  try
-  {
-    auto external_stop_func = [stop, &ret_code](){
-        if (nlopt_stop_time(stop)) {
-          ret_code = NLOPT_MAXTIME_REACHED;
-          return true;
-        }
-        else if (nlopt_stop_forced(stop)) {
-          ret_code = NLOPT_FORCED_STOP;
-          return true;
-        }
-        else return false;
-    };
-    optPoint = solver.Solve(external_stop_func);
-  }
-  catch (const std::exception& exp)
-  {
-    std::cerr << "AGS internal error: " << std::string(exp.what()) << std::endl;
-    return NLOPT_FAILURE;
-  }
+
+  auto external_stop_func = [stop, &ret_code](){
+      if (nlopt_stop_time(stop)) {
+        ret_code = NLOPT_MAXTIME_REACHED;
+        return true;
+      }
+      else if (nlopt_stop_forced(stop)) {
+        ret_code = NLOPT_FORCED_STOP;
+        return true;
+      }
+      else return false;
+  };
+  optPoint = solver.Solve(external_stop_func);
 
   if (ags_verbose)
   {
