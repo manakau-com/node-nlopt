@@ -1,10 +1,10 @@
 {
   "name": "nlopt",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A numerical nonlinear optimization library for node. A wrapper around nlopt.",
   "homepage": "https://github.com/freethenation/node-nlopt",
   "keywords": [
-    "numeical",
+    "numerical",
     "nlopt",
     "nonlinear",
     "optimization",
