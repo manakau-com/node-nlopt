@@ -7,11 +7,11 @@ Copyright (C) 2018 Sovrasov V. - All Rights Reserved
 */
 #pragma once
 
-#include <stdexcept>
 #include <string>
+#include <cassert>
 
-#define NLP_SOLVER_ERROR(msg) throw std::runtime_error(std::string(msg))
-#define NLP_SOLVER_ASSERT(expr, msg) if(!(expr)) NLP_SOLVER_ERROR(msg)
+#define NLP_SOLVER_ERROR(msg) assert(false)
+#define NLP_SOLVER_ASSERT(expr, msg) assert(expr)
 
 namespace ags
 {
