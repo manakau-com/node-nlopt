@@ -197,7 +197,6 @@ bool hasValue(const Local<Value>& v) {
   return !v.IsEmpty() && !v->IsUndefined() && !v->IsNull();
 }
 
-// void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
 NAN_METHOD(Optimize) {
   Isolate* isolate = Isolate::GetCurrent();
   EscapableHandleScope scope(isolate);
