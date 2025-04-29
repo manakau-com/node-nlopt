@@ -33,6 +33,7 @@
     "expect.js": "*",
     "file": "*",
     "mocha": "*",
+    "nan": "^2.22.2",
     "open": "^7.0.4",
     "request": "*"
   },
