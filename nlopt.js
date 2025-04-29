@@ -61,7 +61,7 @@
         throw "'equalityConstraints' should be an array of {callback:function(){}, tolerance:0} objects";
       }
       if (options.inequalityMConstraints && !isArrayOfMultiCallbackTolObjects(options.inequalityMConstraints)) {
-        throw "'inequalityMConstraints' should be an array of {callback:function(){}, tolerances:number[]} objects";
+        throw "'inequalityMConstraints' should be an array of {callback:function(){}, tolerance:number[]} objects";
       }
       if (options.equalityMConstraints && !isArrayOfMultiCallbackTolObjects(options.equalityMConstraints)) {
         throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerances::number[]} objects";
