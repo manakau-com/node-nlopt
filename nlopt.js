@@ -30,7 +30,7 @@
       };
       isArrayOfMultiCallbackTolObjects = function(arr) {
         return _.isArray(arr) && _.reduce(arr, (function(acc, val) {
-          return acc && _.isObject(val) && _.isFunction(val.callback) && _.isArrayOfDoubles(val.tolerance);
+          return acc && _.isObject(val) && _.isFunction(val.callback) && isArrayOfDoubles(val.tolerances);
         }), true);
       };
       if (!options.numberOfParameters) {
@@ -64,7 +64,7 @@
         throw "'inequalityMConstraints' should be an array of {callback:function(){}, tolerance:number[]} objects";
       }
       if (options.equalityMConstraints && !isArrayOfMultiCallbackTolObjects(options.equalityMConstraints)) {
-        throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerance::number[]} objects";
+        throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerances::number[]} objects";
       }
       if (options.initialGuess && !isArrayOfDoubles(options.initialGuess)) {
         throw "'initialGuess' should be an array of doubles";

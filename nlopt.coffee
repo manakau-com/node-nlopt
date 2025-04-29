@@ -59,7 +59,7 @@ module.exports = (options)->
 		isArrayOfCallbackTolObjects = (arr)->
 			return _.isArray(arr) and _.reduce(arr, ((acc, val)->acc&&_.isObject(val)&&_.isFunction(val.callback)&&_.isNumber(val.tolerance)), true)
 		isArrayOfMultiCallbackTolObjects = (arr)->
-			return _.isArray(arr) and _.reduce(arr, ((acc, val)->acc&&_.isObject(val)&&_.isFunction(val.callback)&&_.isArrayOfDoubles(val.tolerance)), true)
+			return _.isArray(arr) and _.reduce(arr, ((acc, val)->acc&&_.isObject(val)&&_.isFunction(val.callback)&&isArrayOfDoubles(val.tolerances)), true)
 		#numberOfParameters
 		if !options.numberOfParameters then throw "'numberOfParameters' must be specified"
 		if !_.isNumber(options.numberOfParameters) then throw "'numberOfParameters' must be a number"
@@ -76,9 +76,9 @@ module.exports = (options)->
 		#equalityConstraints
 		if options.equalityConstraints and !isArrayOfCallbackTolObjects(options.equalityConstraints) then throw "'equalityConstraints' should be an array of {callback:function(){}, tolerance:0} objects"
 		#inequalityMConstraints
-		if options.inequalityMConstraints and !isArrayOfMultiCallbackTolObjects(options.inequalityMConstraints) then throw "'inequalityMConstraints' should be an array of {callback:function(){}, tolerance:number[]} objects"
+		if options.inequalityMConstraints and !isArrayOfMultiCallbackTolObjects(options.inequalityMConstraints) then throw "'inequalityMConstraints' should be an array of {callback:function(){}, tolerances:number[]} objects"
 		#equalityConstraints
-		if options.equalityMConstraints and !isArrayOfMultiCallbackTolObjects(options.equalityMConstraints) then throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerance::number[]} objects"
+		if options.equalityMConstraints and !isArrayOfMultiCallbackTolObjects(options.equalityMConstraints) then throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerances::number[]} objects"
 		#initialGuess
 		if options.initialGuess and !isArrayOfDoubles(options.initialGuess) then throw "'initialGuess' should be an array of doubles"
 		#simple parms
