@@ -2,6 +2,7 @@
 #include <v8.h>
 #include <math.h>
 #include <nlopt.h>
+#include <nan.h>
 
 using namespace v8;
 
@@ -196,7 +197,7 @@ bool hasValue(const Local<Value>& v) {
   return !v.IsEmpty() && !v->IsUndefined() && !v->IsNull();
 }
 
-void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
+NAN_METHOD(Optimize) {
   Isolate* isolate = Isolate::GetCurrent();
   EscapableHandleScope scope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
@@ -206,7 +207,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Local<String> key;
 
   // There is not much validation in this function... should be done in JS.
-  Local<Object> options = args[0].As<Object>();
+  Local<Object> options = info[0].As<Object>();
 
   // Basic NLOpt config
   GET_VALUE(Number, algorithm, options)
@@ -232,7 +233,7 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
     isolate->ThrowException(Exception::TypeError(
       String::NewFromUtf8(isolate, "minObjectiveFunction or maxObjectiveFunction must be specified").ToLocalChecked()
     ));
-    args.GetReturnValue().Set(scope.Escape(ret));
+    info.GetReturnValue().Set(scope.Escape(ret));
     return;
   }
 
@@ -328,20 +329,11 @@ void Optimize(const v8::FunctionCallbackInfo<v8::Value>& args) {
   delete[] input;
   ret->Set(context, String::NewFromUtf8(isolate, "outputValue").ToLocalChecked(), Number::New(isolate, output[0])).FromJust();
   nlopt_destroy(opt); // Cleanup
-  args.GetReturnValue().Set(scope.Escape(ret));
+  info.GetReturnValue().Set(scope.Escape(ret));
 }
 
-void init(Local<Object> exports, Local<Value> module, void* priv) {
-  Isolate* isolate = Isolate::GetCurrent();
-  Local<Context> context = isolate->GetCurrentContext();
-
-  exports->Set(
-    context,
-    String::NewFromUtf8(isolate, "optimize").ToLocalChecked(),
-    FunctionTemplate::New(isolate, Optimize)->GetFunction(context).ToLocalChecked()
-  ).FromJust();
+NAN_MODULE_INIT(init) {
+  Nan::Export(target, "optimize", Optimize);
 }
 
-//NODE_MODULE(NODE_GYP_MODULE_NAME, init)
-
-NODE_MODULE(nlopt, init)
+NAN_MODULE_WORKER_ENABLED(nlopt, init)

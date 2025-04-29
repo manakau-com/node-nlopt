@@ -8,7 +8,7 @@
   optimize = require('./build/Release/nlopt').optimize;
 
   module.exports = function(options) {
-    var i, isArrayOfCallbackTolObjects, isArrayOfMultiCallbackTolObjects, isArrayOfDoubles, len, parm, ref;
+    var i, isArrayOfCallbackTolObjects, isArrayOfDoubles, isArrayOfMultiCallbackTolObjects, len, parm, ref;
     options = _.cloneDeep(options);
     if (!options.algorithm) {
       throw "'algorithm' must be specified";
@@ -29,9 +29,9 @@
         }), true);
       };
       isArrayOfMultiCallbackTolObjects = function(arr) {
-  			return _.isArray(arr) && _.reduce(arr, (function(acc, val) {
+        return _.isArray(arr) && _.reduce(arr, (function(acc, val) {
           return acc && _.isObject(val) && _.isFunction(val.callback) && isArrayOfDoubles(val.tolerances);
-        }), true)
+        }), true);
       };
       if (!options.numberOfParameters) {
         throw "'numberOfParameters' must be specified";
@@ -64,7 +64,7 @@
         throw "'inequalityMConstraints' should be an array of {callback:function(){}, tolerances:number[]} objects";
       }
       if (options.equalityMConstraints && !isArrayOfMultiCallbackTolObjects(options.equalityMConstraints)) {
-        throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerances:number[]} objects";
+        throw "'equalityMConstraints' should be an array of {callback:function(){}, tolerances::number[]} objects";
       }
       if (options.initialGuess && !isArrayOfDoubles(options.initialGuess)) {
         throw "'initialGuess' should be an array of doubles";
