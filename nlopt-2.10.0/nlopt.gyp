@@ -125,13 +125,23 @@
   ],
   'conditions': [
       ['OS=="win"', {
+        # TIME_WITH_SYS_TIME and HAVE_GETTIMEOFDAY are tested with #ifdef /
+        # #if defined(...) in timer.c, i.e. presence-only -- their value is
+        # never read. The previous entries here ('NAME 0', missing the '=')
+        # were parsed by the msvs generator as defining the bare macro NAME
+        # (implicitly 1), so both still evaluated as "present" on Windows.
+        # That forced timer.c to include <sys/time.h> and call
+        # gettimeofday(), neither of which exist on MSVC -- Windows has
+        # neither header, so leave both undefined and let timer.c's
+        # #elif defined(_WIN32) branch (GetSystemTimeAsFileTime) run instead.
+        # HAVE_COPYSIGN/HAVE_ISINF/HAVE_ISNAN are also presence-only checks,
+        # but modern MSVC (VS2015+) does provide these natively, so leaving
+        # them defined is correct as-is.
         'defines': [
-          'TIME_WITH_SYS_TIME 0',
           'THREADLOCAL=__declspec(thread)',
           'HAVE_COPYSIGN 0',
           'HAVE_ISINF 0',
-          'HAVE_ISNAN 0',
-          'HAVE_GETTIMEOFDAY 0'
+          'HAVE_ISNAN 0'
         ]
       },{ # OS != "win"
         'defines': [
