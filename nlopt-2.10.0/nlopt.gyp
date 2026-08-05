@@ -142,7 +142,23 @@
           'HAVE_COPYSIGN 0',
           'HAVE_ISINF 0',
           'HAVE_ISNAN 0'
-        ]
+        ],
+        # Release vcxprojs default WholeProgramOptimization to true, which
+        # makes the Lib step emit /LTCG:INCREMENTAL. MSVC's lib.exe accepts
+        # that, but GitHub's windows-2022 runners also ship the VS "C++
+        # Clang Compiler for Windows" component, and when the gyp-generated
+        # project ends up on the ClangCL platform toolset its librarian is
+        # llvm-lib.exe, which doesn't understand the :INCREMENTAL suffix and
+        # fails with "/LTCG:INCREMENTAL: no such file or directory"
+        # (MSB6006). Turning WPO off drops /GL at compile time and
+        # /LTCG:INCREMENTAL at Lib time under either toolset -- this is a
+        # small static lib, so the cross-TU optimization isn't worth the
+        # toolset-compatibility risk.
+        'msvs_settings': {
+          'VCCLCompilerTool': {
+            'WholeProgramOptimization': 'false'
+          }
+        }
       },{ # OS != "win"
         'defines': [
           'TIME_WITH_SYS_TIME=1',
