@@ -125,14 +125,44 @@
   ],
   'conditions': [
       ['OS=="win"', {
+        # TIME_WITH_SYS_TIME and HAVE_GETTIMEOFDAY are tested with #ifdef /
+        # #if defined(...) in timer.c, i.e. presence-only -- their value is
+        # never read. The previous entries here ('NAME 0', missing the '=')
+        # were parsed by the msvs generator as defining the bare macro NAME
+        # (implicitly 1), so both still evaluated as "present" on Windows.
+        # That forced timer.c to include <sys/time.h> and call
+        # gettimeofday(), neither of which exist on MSVC -- Windows has
+        # neither header, so leave both undefined and let timer.c's
+        # #elif defined(_WIN32) branch (GetSystemTimeAsFileTime) run instead.
+        # HAVE_COPYSIGN/HAVE_ISINF/HAVE_ISNAN are also presence-only checks,
+        # but modern MSVC (VS2015+) does provide these natively, so leaving
+        # them defined is correct as-is.
         'defines': [
-          'TIME_WITH_SYS_TIME 0',
           'THREADLOCAL=__declspec(thread)',
           'HAVE_COPYSIGN 0',
           'HAVE_ISINF 0',
-          'HAVE_ISNAN 0',
-          'HAVE_GETTIMEOFDAY 0'
-        ]
+          'HAVE_ISNAN 0'
+        ],
+        # node-gyp's own addon.gypi defaults 'node_with_ltcg' to true and,
+        # under that condition, injects a literal '/LTCG:INCREMENTAL' into
+        # both VCLibrarianTool.AdditionalOptions and
+        # VCLinkerTool.AdditionalOptions via target_defaults -- which apply
+        # to every target in this build, including this static lib. MSVC's
+        # lib.exe accepts that flag, but GitHub's windows-2022 runners also
+        # ship the VS "C++ Clang Compiler for Windows" component, and when
+        # the gyp-generated project ends up on the ClangCL platform toolset
+        # its librarian is llvm-lib.exe, which doesn't understand the
+        # :INCREMENTAL suffix and fails with "/LTCG:INCREMENTAL: no such
+        # file or directory" (MSB6006). WholeProgramOptimization (/GL) is a
+        # separate, unrelated compiler setting -- turning it off does NOT
+        # remove this literal AdditionalOptions entry, so it has to be
+        # subtracted from the inherited list directly with gyp's '!' list-
+        # removal syntax.
+        'msvs_settings': {
+          'VCLibrarianTool': {
+            'AdditionalOptions!': ['/LTCG:INCREMENTAL']
+          }
+        }
       },{ # OS != "win"
         'defines': [
           'TIME_WITH_SYS_TIME=1',
