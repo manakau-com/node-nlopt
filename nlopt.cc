@@ -3,8 +3,28 @@
 #include <math.h>
 #include <nlopt.h>
 #include <nan.h>
+#include <algorithm>
+#include <limits>
+#include <list>
+#include <string>
 
 using namespace v8;
+
+// One optimize() call. A vector constraint's callback that fails keeps its
+// error here and stops NLopt, and Optimize throws the error once NLopt returns.
+struct OptimizationState {
+  nlopt_opt opt;
+  Global<Value> error;
+  // Execution is terminating, so nothing may call into JavaScript again.
+  bool terminating = false;
+
+  bool failed() const { return terminating || !error.IsEmpty(); }
+};
+
+struct MConstraintCallback {
+  Function* callback;
+  OptimizationState* state;
+};
 
 Local<Array> cArrayToV8Array(unsigned n, const double* array) {
   Isolate* isolate = Isolate::GetCurrent();
@@ -141,56 +161,108 @@ double optimizationFunc(unsigned n, const double* x, double* grad, void* ptrCall
   return returnValue;
 }
 
-void optimizationMFunc(unsigned m, double* result, unsigned n, const double* x, double* grad, void* ptrCallback)
-{
-  Isolate* isolate = Isolate::GetCurrent();
-  EscapableHandleScope scope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
+void throwTypeError(Isolate* isolate, const std::string& message) {
+  isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, message.c_str()).ToLocalChecked()));
+}
 
-  Local<Value> undefined;
-  //Local<Function> callback = *reinterpret_cast<Local<Function>*>(ptrCallback);
-  Function* callback = (Function*)(ptrCallback);
+// Copies the numbers of a plain array into values. False, with an exception
+// thrown, if reading an element throws.
+bool copyArray(Local<Context> context, Local<Array> array, unsigned length, double* values) {
+  for (unsigned i = 0; i < length; ++i) {
+    Local<Value> element;
+    if (!array->Get(context, i).ToLocal(&element)) {
+      return false;
+    }
+    Maybe<double> number = element->NumberValue(context);
+    if (number.IsNothing()) {
+      return false;
+    }
+    values[i] = number.FromJust();
+  }
+  return true;
+}
+
+bool checkMConstraintLength(Isolate* isolate, size_t length, unsigned m) {
+  if (length != m) {
+    throwTypeError(isolate, "A vector constraint's callback must return " + std::to_string(m) +
+      " values, one for each tolerance, not " + std::to_string(length) + ".");
+    return false;
+  }
+  return true;
+}
+
+// A vector constraint's callback returns its m values as a plain array or a
+// Float64Array. False, with an exception thrown, for anything else.
+bool readMConstraintResult(Isolate* isolate, Local<Context> context, Local<Value> ret, unsigned m, double* result) {
+  if (ret->IsFloat64Array()) {
+    Local<Float64Array> values = ret.As<Float64Array>();
+    if (!checkMConstraintLength(isolate, values->Length(), m)) {
+      return false;
+    }
+    values->CopyContents(result, m * sizeof(double));
+    return true;
+  }
+  if (ret->IsArray()) {
+    Local<Array> values = ret.As<Array>();
+    return checkMConstraintLength(isolate, values->Length(), m) && copyArray(context, values, m, result);
+  }
+  String::Utf8Value type(isolate, ret->TypeOf(isolate));
+  throwTypeError(isolate, std::string("A vector constraint's callback must return an array or a Float64Array of numbers, not ") + *type + ".");
+  return false;
+}
+
+void optimizationMFunc(unsigned m, double* result, unsigned n, const double* x, double* grad, void* data)
+{
+  MConstraintCallback* constraint = static_cast<MConstraintCallback*>(data);
+  OptimizationState* state = constraint->state;
+  std::fill(result, result + m, std::numeric_limits<double>::quiet_NaN());
+  if (state->failed()) {
+    return;
+  }
+
+  Isolate* isolate = Isolate::GetCurrent();
+  HandleScope scope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
 
   //prepare parms to callback
   Local<Value> argv[4];
   argv[0] = Number::New(isolate, m);
   argv[1] = Number::New(isolate, n);
   argv[2] = cArrayToV8Array(n, x);
-  //gradient
+  // NLopt's gradient for m constraints is m rows of n.
+  unsigned gradLength = m * n;
   Local<Array> v8Grad;
   if(grad){
-    v8Grad = cArrayToV8Array(n, grad);
+    v8Grad = cArrayToV8Array(gradLength, grad);
     argv[3] = v8Grad;
   }
   else {
     argv[3] = Null(isolate);
   }
-  // Call callback 
-  TryCatch tryCatch(isolate);
-  auto ret = callback->Call(context, context->Global(), 4, argv).ToLocalChecked();
-  //validate return results
-  if(!ret->IsFloat64Array()){
-    isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Objective or constraint function must return an array of number.").ToLocalChecked()));
-  }
 
-  Local<Array> resultArray = Local<Array>::Cast(ret);
-  if(resultArray->Length() != m){
-    isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Length of result array must be the same as the m parameter.").ToLocalChecked()));
-  }
-  else if(grad && v8Grad->Length() != n){
-    isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Length of gradient array must be the same as the number of parameters.").ToLocalChecked()));
-  }
-  else { //success
-    if(grad){
-      for (unsigned i = 0; i < n; ++i) {
-        grad[i] = v8Grad->Get(context, i).ToLocalChecked()->NumberValue(context).ToChecked();
-      }
+  TryCatch tryCatch(isolate);
+  Local<Value> ret;
+  bool ok = constraint->callback->Call(context, context->Global(), 4, argv).ToLocal(&ret) &&
+    readMConstraintResult(isolate, context, ret, m, result);
+  if (ok && grad) {
+    if (v8Grad->Length() != gradLength) {
+      throwTypeError(isolate, "A vector constraint's gradient must have " + std::to_string(gradLength) +
+        " entries, the number of constraints times the number of parameters, not " + std::to_string(v8Grad->Length()) + ".");
+      ok = false;
     }
-    for (unsigned i = 0; i < m; ++i) {
-      result[i] = resultArray->Get(context, i).ToLocalChecked()->NumberValue(context).ToChecked();
+    else {
+      ok = copyArray(context, v8Grad, gradLength, grad);
     }
   }
-  scope.Escape(undefined);
+  if (!ok) {
+    if (tryCatch.CanContinue()) {
+      state->error.Reset(isolate, tryCatch.Exception());
+    }
+    else {
+      state->terminating = true;
+    }
+    nlopt_force_stop(state->opt);
+  }
 }
 
 bool hasValue(const Local<Value>& v) {
@@ -214,6 +286,9 @@ NAN_METHOD(Optimize) {
   GET_VALUE(Number, numberOfParameters, options)
   unsigned n = val_numberOfParameters->Uint32Value(context).FromJust();
   nlopt_opt opt = nlopt_create(static_cast<nlopt_algorithm>(val_algorithm->Uint32Value(context).FromJust()), n);
+  OptimizationState state;
+  state.opt = opt;
+  std::list<MConstraintCallback> mConstraintCallbacks;
 
   // Objective function
   GET_VALUE(Function, minObjectiveFunction, options)
@@ -291,7 +366,8 @@ NAN_METHOD(Optimize) {
       GET_VALUE(Function, callback, obj)
       GET_VALUE(Array, tolerances, obj)
       double* tolerances = v8ArrayToCArray(val_tolerances);
-      code = nlopt_add_inequality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, *val_callback, tolerances);
+      mConstraintCallbacks.push_back({*val_callback, &state});
+      code = nlopt_add_inequality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, &mConstraintCallbacks.back(), tolerances);
       CHECK_CODE(inequalityMConstraints)
     }
   }
@@ -303,7 +379,8 @@ NAN_METHOD(Optimize) {
       GET_VALUE(Function, callback, obj)
       GET_VALUE(Array, tolerances, obj)
       double* tolerances = v8ArrayToCArray(val_tolerances);
-      code = nlopt_add_equality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, *val_callback, tolerances);
+      mConstraintCallbacks.push_back({*val_callback, &state});
+      code = nlopt_add_equality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, &mConstraintCallbacks.back(), tolerances);
       CHECK_CODE(equalityMConstraints)
     }
   }
@@ -324,7 +401,16 @@ NAN_METHOD(Optimize) {
   // Do the optimization!
   key = String::NewFromUtf8(isolate, "status").ToLocalChecked();
   double output[1] = {0};
-  checkNloptErrorCode(ret, key, nlopt_optimize(opt, input, output));
+  nlopt_result status = nlopt_optimize(opt, input, output);
+  if (state.failed()) {
+    delete[] input;
+    nlopt_destroy(opt);
+    if (!state.terminating) {
+      isolate->ThrowException(state.error.Get(isolate));
+    }
+    return;
+  }
+  checkNloptErrorCode(ret, key, status);
   ret->Set(context, String::NewFromUtf8(isolate, "parameterValues").ToLocalChecked(), cArrayToV8Array(n, input)).FromJust();
   delete[] input;
   ret->Set(context, String::NewFromUtf8(isolate, "outputValue").ToLocalChecked(), Number::New(isolate, output[0])).FromJust();
