@@ -10,8 +10,9 @@
 
 using namespace v8;
 
-// One optimize() call. A vector constraint's callback that fails keeps its
-// error here and stops NLopt, and Optimize throws the error once NLopt returns.
+// One optimize() call. A callback that throws, or a vector constraint's callback
+// whose result cannot be read, keeps its error here and stops NLopt, and
+// Optimize throws the error once NLopt returns.
 struct OptimizationState {
   nlopt_opt opt;
   Global<Value> error;
@@ -21,10 +22,24 @@ struct OptimizationState {
   bool failed() const { return terminating || !error.IsEmpty(); }
 };
 
-struct MConstraintCallback {
+// What NLopt hands back to a callback: the JavaScript function, and the
+// optimize() call it belongs to.
+struct Callback {
   Function* callback;
   OptimizationState* state;
 };
+
+// Keeps what tryCatch caught, or notes that execution is terminating, and
+// stops NLopt.
+void stopOptimization(Isolate* isolate, OptimizationState* state, const TryCatch& tryCatch) {
+  if (tryCatch.CanContinue()) {
+    state->error.Reset(isolate, tryCatch.Exception());
+  }
+  else {
+    state->terminating = true;
+  }
+  nlopt_force_stop(state->opt);
+}
 
 Local<Array> cArrayToV8Array(unsigned n, const double* array) {
   Isolate* isolate = Isolate::GetCurrent();
@@ -115,15 +130,18 @@ void checkNloptErrorCode(Local<Object>& errors, Local<String>& operation, nlopt_
     CHECK_CODE(NAME) \
   }
 
-double optimizationFunc(unsigned n, const double* x, double* grad, void* ptrCallback)
+double optimizationFunc(unsigned n, const double* x, double* grad, void* data)
 {
+  Callback* function = static_cast<Callback*>(data);
+  OptimizationState* state = function->state;
+  if (state->failed()) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+
   Isolate* isolate = Isolate::GetCurrent();
-  EscapableHandleScope scope(isolate);
+  HandleScope scope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
 
-  Local<Value> undefined;
-  //Local<Function> callback = *reinterpret_cast<Local<Function>*>(ptrCallback);
-  Function* callback = (Function*)(ptrCallback);
   double returnValue = -1;
 
   //prepare parms to callback
@@ -141,7 +159,11 @@ double optimizationFunc(unsigned n, const double* x, double* grad, void* ptrCall
   }
   // Call callback 
   TryCatch tryCatch(isolate);
-  auto ret = callback->Call(context, context->Global(), 3, argv).ToLocalChecked();
+  Local<Value> ret;
+  if (!function->callback->Call(context, context->Global(), 3, argv).ToLocal(&ret)) {
+    stopOptimization(isolate, state, tryCatch);
+    return std::numeric_limits<double>::quiet_NaN();
+  }
   //validate return results
   if(!ret->IsNumber()){
     isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Objective or constraint function must return a number.").ToLocalChecked()));
@@ -157,7 +179,6 @@ double optimizationFunc(unsigned n, const double* x, double* grad, void* ptrCall
     }
     returnValue = ret->NumberValue(context).ToChecked();
   }
-  scope.Escape(undefined);
   return returnValue;
 }
 
@@ -213,7 +234,7 @@ bool readMConstraintResult(Isolate* isolate, Local<Context> context, Local<Value
 
 void optimizationMFunc(unsigned m, double* result, unsigned n, const double* x, double* grad, void* data)
 {
-  MConstraintCallback* constraint = static_cast<MConstraintCallback*>(data);
+  Callback* constraint = static_cast<Callback*>(data);
   OptimizationState* state = constraint->state;
   std::fill(result, result + m, std::numeric_limits<double>::quiet_NaN());
   if (state->failed()) {
@@ -255,13 +276,7 @@ void optimizationMFunc(unsigned m, double* result, unsigned n, const double* x, 
     }
   }
   if (!ok) {
-    if (tryCatch.CanContinue()) {
-      state->error.Reset(isolate, tryCatch.Exception());
-    }
-    else {
-      state->terminating = true;
-    }
-    nlopt_force_stop(state->opt);
+    stopOptimization(isolate, state, tryCatch);
   }
 }
 
@@ -288,19 +303,21 @@ NAN_METHOD(Optimize) {
   nlopt_opt opt = nlopt_create(static_cast<nlopt_algorithm>(val_algorithm->Uint32Value(context).FromJust()), n);
   OptimizationState state;
   state.opt = opt;
-  std::list<MConstraintCallback> mConstraintCallbacks;
+  std::list<Callback> callbacks;
 
   // Objective function
   GET_VALUE(Function, minObjectiveFunction, options)
   GET_VALUE(Function, maxObjectiveFunction, options)
   int minMax = 0;
   if (hasValue(val_minObjectiveFunction)) {
-    code = nlopt_set_min_objective(opt, optimizationFunc, *val_minObjectiveFunction);
+    callbacks.push_back({*val_minObjectiveFunction, &state});
+    code = nlopt_set_min_objective(opt, optimizationFunc, &callbacks.back());
     CHECK_CODE(minObjectiveFunction)
     ++minMax;
   }
   if (hasValue(val_maxObjectiveFunction)) {
-    code = nlopt_set_max_objective(opt, optimizationFunc, *val_maxObjectiveFunction);
+    callbacks.push_back({*val_maxObjectiveFunction, &state});
+    code = nlopt_set_max_objective(opt, optimizationFunc, &callbacks.back());
     CHECK_CODE(maxObjectiveFunction)
     ++minMax;
   }
@@ -343,7 +360,8 @@ NAN_METHOD(Optimize) {
       Local<Object> obj = val_inequalityConstraints->Get(context, i).ToLocalChecked().As<Object>();
       GET_VALUE(Function, callback, obj)
       GET_VALUE(Number, tolerance, obj)
-      code = nlopt_add_inequality_constraint(opt, optimizationFunc, *val_callback, val_tolerance->NumberValue(context).FromJust());
+      callbacks.push_back({*val_callback, &state});
+      code = nlopt_add_inequality_constraint(opt, optimizationFunc, &callbacks.back(), val_tolerance->NumberValue(context).FromJust());
       CHECK_CODE(inequalityConstraints)
     }
   }
@@ -354,7 +372,8 @@ NAN_METHOD(Optimize) {
       Local<Object> obj = val_equalityConstraints->Get(context, i).ToLocalChecked().As<Object>();
       GET_VALUE(Function, callback, obj)
       GET_VALUE(Number, tolerance, obj)
-      code = nlopt_add_equality_constraint(opt, optimizationFunc, *val_callback, val_tolerance->NumberValue(context).FromJust());
+      callbacks.push_back({*val_callback, &state});
+      code = nlopt_add_equality_constraint(opt, optimizationFunc, &callbacks.back(), val_tolerance->NumberValue(context).FromJust());
       CHECK_CODE(equalityConstraints)
     }
   }
@@ -366,8 +385,8 @@ NAN_METHOD(Optimize) {
       GET_VALUE(Function, callback, obj)
       GET_VALUE(Array, tolerances, obj)
       double* tolerances = v8ArrayToCArray(val_tolerances);
-      mConstraintCallbacks.push_back({*val_callback, &state});
-      code = nlopt_add_inequality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, &mConstraintCallbacks.back(), tolerances);
+      callbacks.push_back({*val_callback, &state});
+      code = nlopt_add_inequality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, &callbacks.back(), tolerances);
       CHECK_CODE(inequalityMConstraints)
     }
   }
@@ -379,8 +398,8 @@ NAN_METHOD(Optimize) {
       GET_VALUE(Function, callback, obj)
       GET_VALUE(Array, tolerances, obj)
       double* tolerances = v8ArrayToCArray(val_tolerances);
-      mConstraintCallbacks.push_back({*val_callback, &state});
-      code = nlopt_add_equality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, &mConstraintCallbacks.back(), tolerances);
+      callbacks.push_back({*val_callback, &state});
+      code = nlopt_add_equality_mconstraint(opt, val_tolerances->Length(), optimizationMFunc, &callbacks.back(), tolerances);
       CHECK_CODE(equalityMConstraints)
     }
   }

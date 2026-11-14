@@ -72,7 +72,8 @@ The library defines a single function that takes a JavaScript object as a parame
     //Vector constraints. Each callback returns m values, one for each tolerance, as an array
     //or a Float64Array. A gradient, when given, has m * numberOfParameters entries: row i
     //(entries i * numberOfParameters onwards) is the gradient of value i. If the callback
-    //throws, or returns anything else, the optimization stops and the call throws that error.
+    //returns anything else, the optimization stops and the call throws a TypeError.
+    //If any callback throws, the optimization stops and the call throws that error.
     inequalityMConstraints:[{callback:function(m, numberOfParameters, parameterValues, gradient){}, tolerances:[1e-8, 1e-8]}],
     equalityMConstraints:[{callback:function(m, numberOfParameters, parameterValues, gradient){}, tolerances:[1e-8, 1e-8]}],
     //Consult http://ab-initio.mit.edu/wiki/index.php/NLopt_Reference#Stopping_criteria for more info

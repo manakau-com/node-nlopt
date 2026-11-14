@@ -134,6 +134,31 @@ describe('vector constraints', function () {
     expect(Math.abs(result.parameterValues[1] - 8 / 27)).to.be.below(1e-4);
   });
 
+  it('throws when the callback changes the length of the gradient', function () {
+    expectTypeError({
+      algorithm: 'LD_MMA',
+      numberOfParameters: 2,
+      minObjectiveFunction: function (n, x, grad) {
+        if (grad) {
+          grad[0] = 0;
+          grad[1] = 1;
+        }
+        return x[1];
+      },
+      inequalityMConstraints: [{
+        callback: function (m, n, x, grad) {
+          if (grad) {
+            grad.push(0);
+          }
+          return [x[0] - 1, -x[1]];
+        },
+        tolerances: [0, 0]
+      }],
+      initialGuess: [0, 1],
+      maxEval: 100
+    }, /gradient must have 4 entries, the number of constraints times the number of parameters, not 5\./);
+  });
+
   it('lets a worker be terminated inside the callback', function () {
     // In a child process, so that an abort fails this test rather than the run.
     var script = [
