@@ -164,6 +164,18 @@
           }
         }
       },{ # OS != "win"
+        # GCC and Clang may fuse a * b + c into one fused multiply-add, which
+        # rounds once where the separate multiply and add round twice. GCC
+        # does so wherever the target has the instruction: always on arm64,
+        # and on x86-64 when the compiler defaults to x86-64-v3, as gcc 14 and
+        # 15 on Ubuntu 26.04 do. COBYLA and BOBYQA then take a different path
+        # and stop at a different optimum, so the answer would depend on which
+        # compiler built the addon. With contraction off, every compiler and
+        # target does the same arithmetic.
+        'cflags': ['-ffp-contract=off'],
+        'xcode_settings': {
+          'OTHER_CFLAGS': ['-ffp-contract=off']
+        },
         'defines': [
           'TIME_WITH_SYS_TIME=1',
           'THREADLOCAL=__thread',

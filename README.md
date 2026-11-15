@@ -8,6 +8,8 @@ Run the command
 
 Running this command builds nlopt which is a c library. I have tested that it build on Windows 64bit and Linux 64bit. I have not tested other platforms
 
+On Linux and macOS nlopt is built with `-ffp-contract=off`, so the compiler never fuses a multiply and an add into one instruction. Without it, the same optimization can return a different answer depending on the compiler and CPU it was built for: Ubuntu 26.04's gcc fuses them by default, and so does gcc on arm64.
+
 # Simple Example #
 The library defines a single method. A simple example of how to use the library can be found below. This is the same example used in the [tutorial at NLopt's website](http://ab-initio.mit.edu/wiki/index.php/NLopt_Tutorial).
 
